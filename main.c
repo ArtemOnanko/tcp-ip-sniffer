@@ -192,8 +192,8 @@ int main()
         exit(EXIT_FAILURE);
     }
                           
-    // now we can set our callback function (until stop is pressed)
-    pcap_loop(handle, 2, got_packet, NULL);
+    // now we can set our callback function (500 packets)
+    pcap_loop(handle, 500, got_packet, NULL);
     
     //stop loop realization
         
