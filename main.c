@@ -1,3 +1,6 @@
+/*  Compile       gcc -Wall -o main main.c -lpcap  */
+/*  Run           sudo ./main		           */
+
 #include <stdio.h>
 #include <pcap.h>
 #include <netinet/in.h>
@@ -242,7 +245,7 @@ bool load(char* dev)
     else 
     {
         int index = 0;      // index for children[]
-        char word[15+2];    // IP word + eol 192.168.001.001 = 15 
+        char word[15+2];    // IP word + eol +eof 192.168.001.001 = 15 
         while (true) 
         {
             //getting strings from IP_log_sniff one by one
