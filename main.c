@@ -1,4 +1,4 @@
- #include <stdio.h>
+#include <stdio.h>
 #include <pcap.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -16,7 +16,8 @@
 #define IP_HL(ip)               (((ip)->ip_vhl) & 0x0f) // IP Length
 #define IP_V(ip)                (((ip)->ip_vhl) >> 4)   // IP version
 // ip header
-struct sniff_ip {
+struct sniff_ip 
+{
     u_char ip_vhl; /* version << 4 | header length >> 2 */
     u_char ip_tos; /* type of service */
     u_short ip_len; /* total length */
@@ -32,22 +33,23 @@ struct sniff_ip {
     struct in_addr ip_src, ip_dst; /* source and dest address */
 };
 
-// Global variables
+// global variables
 char errbuf[PCAP_ERRBUF_SIZE];
-char* dev;
+char *dev;
 pcap_t *handle;
 bpf_u_int32 mask; // The netmask of our sniffing device
-bpf_u_int32 net; // The IP of our sniffing device 
+bpf_u_int32 net;  // The IP of our sniffing device 
 struct bpf_program fp; // The compiled filter expression 
 char filter_exp[] = "tcp"; // The filter expression
 char buffer[16]; // Defining the buffer for IP statistics
-int shmid;      // shared memory ID
-key_t key;      // key for shared memory
-char *shm;      // shared memory
+int shmid;       // shared memory ID
+key_t key;       // key for shared memory
+char *shm;       // shared memory
+char temp_shm[27]; // temporary value of shared memory
+bool preset_indicator;
 
-// Declaring log files
+// declaring log files
 FILE* IP_log_sniff;
-FILE* IP_log_stat;
 
 // defining node structure
 typedef struct node 
@@ -64,7 +66,8 @@ node* createNewNode(void)
     node* newNode = malloc(sizeof (node));
     newNode -> num_of_packets = 0;
     newNode -> is_word = false;
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < 11; i++) 
+    {
         newNode -> children[i] = NULL;
     }
     return newNode;
@@ -73,11 +76,14 @@ node* createNewNode(void)
 // function for symbol "insertion" to the trie
 node* insertSymbol(node* current, int i) 
 {
-    if (current -> children[i] == NULL) {
+    if (current -> children[i] == NULL) 
+    {
         node* newNode = createNewNode();
         current -> children[i] = newNode;
         current = newNode;
-    } else {
+    } 
+    else 
+    {
         current = current -> children[i];
     }
     return current;
@@ -89,9 +95,11 @@ node* root;
 // free node
 void freeNode(node* node) 
 {
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < 11; i++) 
+    {
         // if node's children point to somewhere
-        if (node -> children[i] != NULL) {
+        if (node -> children[i] != NULL) 
+        {
             // recursevely calling next level node and checking it's children
             freeNode(node -> children[i]);
         }
@@ -112,18 +120,18 @@ bool unload(void)
 bool load(char* dev);
 
 // IP search function prototype
-unsigned long int search(const char* word);
+int show(char* word);
 
-// whole statistics function proto
+// whole statistics function prototype
 void statistics(node* node, int depth, char buff[]);
 
 // writing packet info to the file and to the screen
 void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
 {
-    static int count = 1; //packet counter
+    static int count = 1;       // packet counter (should be static here)
 
     // declare pointers to packet headers 
-    const struct sniff_ip *ip; // The IP header
+    const struct sniff_ip *ip;  // The IP header
     unsigned int size_ip;
     printf("\nPacket number %d:\n", count);
     count++;
@@ -131,7 +139,8 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
     // define/compute ip header offset 
     ip = (struct sniff_ip*) (packet + SIZE_ETHERNET);
     size_ip = IP_HL(ip)*4;
-    if (size_ip < 20) {
+    if (size_ip < 20) 
+    {
         printf("   * Invalid IP header length: %u bytes\n", size_ip);
         return;
     }
@@ -143,41 +152,34 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
     fprintf(IP_log_sniff, "%s\n", inet_ntoa(ip->ip_src));
 }
 
-void preset(char* dev) 
+// function for preparing the sniffing device  
+bool preset(char* dev) 
 {
-    // setting the default device   
-    // dev = "wlp2s0";
-    //dev = "enp6s0";
-    printf("Trying to sniff on %s device\n", dev);
-    // Opens the log file for appending       
-    IP_log_sniff = fopen(dev, "a");
-    // checking if log file opens
-    if (IP_log_sniff == NULL) 
-    {
-        fprintf(stderr, "Could not open log file");
-        exit(EXIT_FAILURE);
-    }
-
     // get network number and mask associated with capture device
     if (pcap_lookupnet(dev, &net, &mask, errbuf) == -1) 
     {
-        fprintf(stderr, "Couldn't get netmask for device %s: %s\n", dev, errbuf);
+        printf("Couldn't get netmask for device %s: %s\n", dev, errbuf);
         net = 0;
         mask = 0;
+        preset_indicator = false;
+        return false;
     }
 
     // openening the device for sniffing in non-promiscuous mode
     handle = pcap_open_live(dev, BUFSIZ, 0, 1000, errbuf);
-    if (handle == NULL) {
-        fprintf(stderr, "Couldn't open device %s: %s\n", dev, errbuf);
-        exit(EXIT_FAILURE);
+    if (handle == NULL) 
+    {
+        printf("Couldn't open device %s: %s\n", dev, errbuf);
+        preset_indicator = false;
+        return false;
     }
 
     // in case link-layer header type is not supported
     if (pcap_datalink(handle) != DLT_EN10MB) 
     {
-        fprintf(stderr, "Device %s doesn't provide Ethernet headers - not supported\n", dev);
-        exit(EXIT_FAILURE);
+        printf("Device %s doesn't provide Ethernet headers - not supported\n", dev);
+        preset_indicator = false;
+        return false;
     }
 
     //  sniffing all INCOMING network traffic
@@ -186,32 +188,36 @@ void preset(char* dev)
     // compile the filter expression
     if (pcap_compile(handle, &fp, filter_exp, 0, net) == -1) 
     {
-        fprintf(stderr, "Couldn't parse filter %s: %s\n", filter_exp, pcap_geterr(handle));
-        exit(EXIT_FAILURE);
+        printf("Couldn't parse filter %s: %s\n", filter_exp, pcap_geterr(handle));
+        preset_indicator = false;
+        return false;
     }
 
     // apply the compiled filter
     if (pcap_setfilter(handle, &fp) == -1) 
     {
-        fprintf(stderr, "Couldn't install filter %s: %s\n", filter_exp, pcap_geterr(handle));
-        exit(EXIT_FAILURE);
+        printf("Couldn't install filter %s: %s\n", filter_exp, pcap_geterr(handle));
+        preset_indicator = false;
+        return false; 
     }
+    printf("Device %s is ready for sniffing\n", dev);
+    preset_indicator = true;
+    return true;
 }
 
 void text(void) 
 {
-    printf("Print start for sniffing on default settings\n");
+    printf("Print start for sniffing\n");
     printf("Print stop to stop sniffing\n");
-    printf("Print show [ip] count to show number of packets gets from [ip]\n");
-    printf("Print select iface [iface] to select interface for sniffing\n");
+    printf("Print show [ip] to show number of packets gets from [ip] on current interface\n");
+    printf("Print select [iface] to select interface for sniffing\n");
     printf("Print stat [iface] to show collected statistics on chosen interface\n");
     printf("Print quit to exit\n");
-    printf("Print help to show this message again\n");
+    printf("Print help for help\n");
 }
 
-void cleanup(void)
+void cleanup(void)              // close IP_log_sniff
 {
-    fclose(IP_log_sniff);
     pcap_freecode(&fp);
     pcap_close(handle);
     printf("\nCapture complete.\n"); 
@@ -219,105 +225,131 @@ void cleanup(void)
 
 int main() 
 {
-    // setting zeros to IP stat buffer ???
-    for (int i = 0; i < 16; i++)
-        buffer[i] = 0;
-
     // forking processes: sniffing and menu
     pid_t pid = fork();
 
     if (pid > 0) // parent process (MENU)
-    {
-        /*
-         * We'll name our shared memory segment
-         * "1234".
-         */
+    {       
+        // We'll name our shared memory segment "1234".      
         key = 1234;
 
-        /*
-         * Create the segment.
-         */
-        if ((shmid = shmget(key, SHMSZ, IPC_CREAT | 0666)) < 0) {
-            perror("shmget");
-            exit(1);
+        // Create the segment.
+        if ((shmid = shmget(key, SHMSZ, IPC_CREAT | 0666)) < 0) 
+        {
+            printf("Couldn't create the segment\n");
+            exit(EXIT_FAILURE);
         }
 
-        /*
-         * Now we attach the segment to our data space.
-         */
-        if ((shm = shmat(shmid, NULL, 0)) == (char *) - 1) {
-            perror("shmat");
-            exit(1);
+        // Now we attach the segment to our data space.
+        if ((shm = shmat(shmid, NULL, 0)) == (char *) - 1) 
+        {
+            printf("Couldn't attache the segment to our data space\n");
+            exit(EXIT_FAILURE);
         }
 
-        /*
-         * Now put some things into the memory for the
-         * other process to read.
-         */
+        // Now put some things into the memory for the other process to read.
         for (int i = 0; i < 27; i++)
         {
             shm[i] = 0;
         }
         do 
         {
-            scanf("%s", shm);
+            fgets(shm, 27, stdin);
+            shm[strcspn(shm, "\n")] = 0; // thus we exlude \n from shm
         } 
         while (strcmp(shm, "quit") != 0);
-        wait(0);
+        wait(0);                        // waiting for child process to exit
+        
+        // deleting shared memory segment
+        shmctl(key, IPC_RMID, NULL);
         exit(EXIT_SUCCESS);
-
     }
     else if (pid == 0) // child process (SNIFFING) 
     {
         key = 1234;
 
-        /*
-         * Locate the segment.
-         */
-        if ((shmid = shmget(key, SHMSZ, 0666)) < 0) {
-            perror("shmget");
-            exit(1);
+        // Locate the segment.
+        if ((shmid = shmget(key, SHMSZ, 0666)) < 0) 
+        {
+            printf("Couldn't locate the segment\n");
+            exit(EXIT_FAILURE);
         }
 
-        /*
-         * Now we attach the segment to our data space.
-         */
-        if ((shm = shmat(shmid, NULL, 0)) == (char *) - 1) {
-            perror("shmat");
-            exit(1);
+        // Now we attach the segment to our data space.
+        if ((shm = shmat(shmid, NULL, 0)) == (char *) - 1) 
+        {
+            printf("Couldn't attache the segment to our data space\n");
+            exit(EXIT_FAILURE);
         }
 
-        /*
-         * Now read what the parent put in the memory.
-         */
-        char* dev = pcap_lookupdev(errbuf);   // default device
-        preset(dev);
+        // Now read what the parent put in the memory.
+        dev = pcap_lookupdev(errbuf);       // default device (causes some valgrind errors)
         text();
-         
-        //default sniffing loop
-        while (strcmp(shm, "quit") != 0) 
-        { 
-            if (strcmp(shm, "stop") == 0 || strncmp(shm, "show", 4) == 0 || strncmp(shm, "select", 6) == 0 || strcmp(shm, "stat") == 0 || strcmp(shm, "quit") == 0 || strcmp(shm, "help") == 0 || strncmp(shm, "search", 6) == 0)
-                break;  
-            pcap_dispatch(handle, 1, got_packet, NULL);    
+        
+        if (preset(dev) == false)
+        {
+            printf("Couldn't sniff on default device! Print select [iface] for chosing new device or quit to exit\n");
+            while(1)
+            {
+                if(strncmp(shm, "select ", 7) == 0 || strcmp(shm, "quit") == 0)
+                    break;
+            }  
         }
-        // cleanup
-        cleanup();
+        else
+        {
+            // Opens the log file for appending       
+            IP_log_sniff = fopen(dev, "a");
+    
+            // checking if the log file opens
+            if (IP_log_sniff == NULL) 
+            {
+                printf("Couldn't open log file\n");
+                exit(EXIT_FAILURE);
+            }
+            printf ("Start sniffing on %s device...\n", dev);
+        } 
+         
+        // default sniffing loop
+        while (strcmp(shm, "quit") != 0) 
+        {   
+            if((strncmp(shm, "select ", 7) == 0 || strcmp(shm, "quit") == 0) && preset_indicator == false)
+                break;
+            
+            pcap_dispatch(handle, 1, got_packet, NULL);
+            
+            if ((strcmp(shm, "stop") == 0 || strncmp(shm, "select ", 7) == 0 || strncmp(shm, "stat ", 5) == 0 || strcmp(shm, "quit") == 0 || strcmp(shm, "help") == 0 || strncmp(shm, "show ", 5) == 0) && preset_indicator == true)
+            {
+                fclose(IP_log_sniff);
+                break;  
+            }
+        }
                         
         // menu commands processing 
         while(strcmp(shm, "quit") != 0)
         {
-            printf("main loop\n");
-            //sniffing loop
+            // start manual sniffing
             if (strcmp(shm, "start") == 0)
             {
-                preset(dev);
-                while (strcmp(shm, "stop") != 0 && strcmp(shm, "show") != 0 && strcmp(shm,"select") != 0 && strcmp(shm,"stat") != 0 && strcmp(shm,"quit") != 0 && strcmp(shm,"help") != 0) 
+                printf ("Start sniffing on %s device...\n", dev);
+                
+                // Opens the log file for appending       
+                IP_log_sniff = fopen(dev, "a");
+    
+                // checking if the log file opens
+                if (IP_log_sniff == NULL) 
+                {
+                    printf("Couldn't open log file\n");
+                    exit(EXIT_FAILURE);
+                }
+                
+                while (strcmp(shm, "stop") != 0 && strncmp(shm, "select ",7) != 0 && strncmp(shm,"stat ", 5) != 0 && strcmp(shm,"quit") != 0 && strcmp(shm,"help") != 0 && strncmp(shm, "show ", 5) != 0) 
                 {   
                     pcap_dispatch(handle, 1, got_packet, NULL);
                 }
-                cleanup(); 
+                fclose(IP_log_sniff);
             }
+            
+            // display help message
             if (strcmp(shm, "help") == 0)
             {
                 text();
@@ -325,35 +357,115 @@ int main()
                 {
                 }  
             }
-            if (strcmp(shm, "stat") == 0)
+            
+            // statistics
+            if (strncmp(shm, "stat ", 5) == 0)
             {
-                printf("Dev %s\n", dev);
-                bool loaded = load(dev);
-                printf ("Trie loaded!\n");
+                char * stat_buff = strchr (shm, ' ') + 1;            
+                bool loaded = load(stat_buff);
                 
-                //abort if structure not loaded
+                // abort if structure not loaded
                 if (!loaded) 
                 {
-                    fprintf(stderr, "Could not load structure from %s file.\n", dev);
-                    exit(EXIT_FAILURE);
+                    printf("Couldn't load trie structure from %s file.\n", stat_buff);
                 }
-                // printing whole statistis
-                statistics(root, 0, buffer);
-                
-                while(strcmp(shm, "stat") == 0)
+                else
                 {
+                    printf("From %s device we got:\n\n", stat_buff);
+                    
+                    // printing whole statistis
+                    statistics(root, 0, buffer);
+                    
+                    // unload structure trie
+                    bool unloaded = unload();
+    
+                    // abort if trie not unloaded
+                    if (!unloaded) 
+                    {
+                        printf("Could not unload trie %s.\n", stat_buff);
+                        exit(EXIT_FAILURE);
+                    }
+                }
+                while(1) 
+                {
+                    strncpy(temp_shm, shm, 27);
+                    if (strncmp(shm, "show ", 5) == 0 || strncmp(shm, "select ", 7) == 0 || strcmp(shm, "help") == 0 || strcmp(shm, "start") == 0 || strcmp(shm, "quit") == 0 || (strcmp(shm, temp_shm) != 0 && strncmp(shm, "stat ", 5) == 0))
+                    {
+                        break;
+                    }
                 }  
             }
             
-            // search for curren IP
-            if (strncmp(shm, "search", 6) == 0)
+            // show IP
+            if (strncmp(shm, "show ", 5) == 0)
             {
-                int packets_from_ip = search("123.1.1.1");
-                printf("From 123.1.1.1 got %d packets\n", packets_from_ip);
-            }
-            while(strncmp(shm, "search", 6) == 0)
+                // loading trie
+                bool loaded = load(dev);
+                
+                // abort if structure not loaded
+                if (!loaded) 
                 {
+                    printf("Couldn't load trie structure from %s file.\n", dev);
+                }
+                else
+                {
+                    char* show_buff = strchr (shm, ' ') + 1; 
+                    printf("From %s got %d packets on %s interface.\n", show_buff, show(show_buff), dev); 
+                    
+                    // unload structure trie
+                    bool unloaded = unload();
+    
+                    // abort if trie not unloaded
+                    if (!unloaded) 
+                    {
+                        printf("Could not unload trie %s.\n", dev);
+                        exit(EXIT_FAILURE);
+                    }
+                }
+                while(1) 
+                {
+                    strncpy(temp_shm, shm, 27);
+                    if (strncmp(shm, "select ", 7) == 0 || strncmp(shm, "stat ", 5) == 0 || strcmp(shm, "help") == 0 || strcmp(shm, "start") == 0 || strcmp(shm, "quit") == 0 || (strcmp(shm, temp_shm) != 0 && strncmp(shm, "show ", 5) == 0))
+                    {
+                        break;
+                    }
                 }  
+            }
+            // select interface for sniffing
+            if (strncmp(shm, "select ", 7) == 0)
+            {
+                printf("entering select\n");
+                
+                while(1)
+                {
+                    char* select_buff = strchr(shm, ' ') + 1;
+                    printf("select_buff = %s", select_buff);
+                    for (int i = 0; i < strlen(select_buff); i++)
+                    {
+                        dev[i] = select_buff[i];
+                    }
+                     printf("dev = %s", dev);
+                    if (preset(dev) == false)
+                    {
+                        printf("Couldn't sniff on selected device! Print select [iface] for chosing new device or quit to exit\n");
+                        
+                        while(1)
+                        {
+                            strncpy(temp_shm, shm, 27);
+                            //(0.01);
+                            if (strcmp(shm, "quit") == 0 || (strcmp(shm, temp_shm) != 0 && strncmp(shm, "select ", 7) == 0))
+                                break;
+                        }  
+                    }
+                    else
+                    {
+                        while (strcmp (shm, "start") != 0 && strncmp(shm, "stat ", 5) != 0 && strcmp(shm, "quit") != 0 && strcmp(shm, "help") != 0 && strncmp(shm, "show ", 5) != 0)                        
+                        {
+                        }
+                        break;
+                    }        
+                }
+            }
         }
     }
     else 
@@ -362,36 +474,36 @@ int main()
         printf("fork() failed!\n");
         return 1;
     }
-    // unload structure trie
-    bool unloaded = unload();
-    printf("Trie unloaded!!!\n");
-    // abort if trie not unloaded
-    if (!unloaded) 
-    {
-        fprintf(stderr, "Could not unload %s.\n", dev);
-        exit(EXIT_FAILURE);
-    }
-    printf("end of program\n");
+    
+    printf("Now exit!\n");
+    cleanup();
     return 0;
 }
 
 // loading IP words from IP_log_sniff file to a trie struct
-bool load(char* dev) {
+bool load(char* dev) 
+{
     root = createNewNode();
+    
     // defining current node pointing to root
     node* current = root;
+    
     // opening log file for reading
-    FILE* IP_log_sniff = fopen(dev, "r");
+    IP_log_sniff = fopen(dev, "r");
+    
     // checking if file opens
-    if (IP_log_sniff == NULL) {
+    if (IP_log_sniff == NULL) 
+    {
         return false;
-    } else {
+    } 
+    else 
+    {
         int index = 0; // index for children[]
         char word[15 + 2]; // IP word + eol 192.168.001.001 = 15 
-        while (true) {
+        while (true) 
+        {
             //getting strings from IP_log_sniff one by one
             fgets(word, 15 + 2, IP_log_sniff);
-
             for (int i = 0; word[i] != 10; i++) // till the eol
             {
                 if (word[i] == 46) // dot
@@ -415,7 +527,8 @@ bool load(char* dev) {
     }
 }
 
-unsigned long int search(const char* word) {
+int show(char* word) 
+{
     // defining current node pointing to root
     node* current = root;
     int index = 0;
@@ -429,11 +542,13 @@ unsigned long int search(const char* word) {
             index = 10;
         else if (current -> is_word == true) // empty
             return current -> num_of_packets;
-        else {
+        else 
+        {
             printf("No such IP in the list\n");
             return 0;
         }
-        if (current -> children[index] == NULL) {
+        if (current -> children[index] == NULL) 
+        {
             printf("No such IP in the list\n");
             return 0;
         } else
@@ -444,17 +559,20 @@ unsigned long int search(const char* word) {
 }
 
 // print out whole statistics
-void statistics(node* node, int depth, char buff[]) {
+void statistics(node* node, int depth, char buff[]) 
+{
     for (int i = 0; i < 11; i++) 
     {
-        if (node -> children[i] != NULL) {
+        if (node -> children[i] != NULL) 
+        {
             if (i == 10) // dot
                 buff[depth] = '.';
             else // ascii code of 0 equals 48
                 buff[depth] = i + 48;
             // recursevely calling stat function 
             statistics(node -> children[i], depth + 1, buff);
-        } else
+        } 
+        else
             buff[depth] = '\0';
     }
     if (node -> is_word == true)
