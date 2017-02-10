@@ -437,8 +437,7 @@ int main()
             
             // select interface for sniffing
             if (strncmp(shm, "select ", 7) == 0)
-            {   
-                printf("entering select\n"); 
+            {
                 while(1)
                 {   
                     select_buff = strchr (shm, ' ') + 1;
