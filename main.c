@@ -34,8 +34,9 @@ struct sniff_ip
 };
 
 // global variables
+char *dev; 
+char * select_buff;
 char errbuf[PCAP_ERRBUF_SIZE];
-char *dev;
 pcap_t *handle;
 bpf_u_int32 mask; // The netmask of our sniffing device
 bpf_u_int32 net;  // The IP of our sniffing device 
@@ -224,7 +225,7 @@ void cleanup(void)              // close IP_log_sniff
 }
 
 int main() 
-{
+{   
     // forking processes: sniffing and menu
     pid_t pid = fork();
 
@@ -255,16 +256,16 @@ int main()
         do 
         {
             fgets(shm, 27, stdin);
-            shm[strcspn(shm, "\n")] = 0; // thus we exlude \n from shm
+            shm[strcspn(shm, "\n")] = 0;    // thus we exlude \n from shm
         } 
         while (strcmp(shm, "quit") != 0);
-        wait(0);                        // waiting for child process to exit
+        wait(0);                            // waiting for child process to exit
         
         // deleting shared memory segment
         shmctl(key, IPC_RMID, NULL);
         exit(EXIT_SUCCESS);
     }
-    else if (pid == 0) // child process (SNIFFING) 
+    else if (pid == 0)                      // child process (SNIFFING) 
     {
         key = 1234;
 
@@ -312,12 +313,14 @@ int main()
         // default sniffing loop
         while (strcmp(shm, "quit") != 0) 
         {   
+            // case if default snoffing device fault
             if((strncmp(shm, "select ", 7) == 0 || strcmp(shm, "quit") == 0) && preset_indicator == false)
                 break;
             
             pcap_dispatch(handle, 1, got_packet, NULL);
             
-            if ((strcmp(shm, "stop") == 0 || strncmp(shm, "select ", 7) == 0 || strncmp(shm, "stat ", 5) == 0 || strcmp(shm, "quit") == 0 || strcmp(shm, "help") == 0 || strncmp(shm, "show ", 5) == 0) && preset_indicator == true)
+            // case if default snoffing device ok
+            if (strcmp(shm, "stop") == 0 || strncmp(shm, "select ", 7) == 0 || strncmp(shm, "stat ", 5) == 0 || strcmp(shm, "quit") == 0 || strcmp(shm, "help") == 0 || strncmp(shm, "show ", 5) == 0)
             {
                 fclose(IP_log_sniff);
                 break;  
@@ -431,20 +434,18 @@ int main()
                     }
                 }  
             }
+            
             // select interface for sniffing
             if (strncmp(shm, "select ", 7) == 0)
-            {
-                printf("entering select\n");
-                
+            {   
+                printf("entering select\n"); 
                 while(1)
-                {
-                    char* select_buff = strchr(shm, ' ') + 1;
-                    printf("select_buff = %s", select_buff);
-                    for (int i = 0; i < strlen(select_buff); i++)
+                {   
+                    select_buff = strchr (shm, ' ') + 1;
+                    for(int i = 0; i < 6; i++)
                     {
                         dev[i] = select_buff[i];
                     }
-                     printf("dev = %s", dev);
                     if (preset(dev) == false)
                     {
                         printf("Couldn't sniff on selected device! Print select [iface] for chosing new device or quit to exit\n");
@@ -452,7 +453,6 @@ int main()
                         while(1)
                         {
                             strncpy(temp_shm, shm, 27);
-                            //(0.01);
                             if (strcmp(shm, "quit") == 0 || (strcmp(shm, temp_shm) != 0 && strncmp(shm, "select ", 7) == 0))
                                 break;
                         }  
@@ -474,7 +474,6 @@ int main()
         printf("fork() failed!\n");
         return 1;
     }
-    
     printf("Now exit!\n");
     cleanup();
     return 0;
